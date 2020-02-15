@@ -807,8 +807,13 @@ class _Structure(ArchComponent.Component):
             baseface = Part.Face(Part.makePolygon([v1,v2,v3,v4,v1]))
             base,placement = self.rebase(baseface)
         if base and placement:
-            if obj.Tool and obj.Tool.Shape:
-                extrusion = obj.Tool.Shape.copy()
+            if obj.Tool:
+                if obj.Tool.Shape:
+                    edges = obj.Tool.Shape.Edges
+                    if len(edges) == 1 and DraftGeomUtils.geomType(edges[0]) == "Line":
+                        extrusion = DraftGeomUtils.vec(edges[0])
+                    else:
+                        extrusion = obj.Tool.Shape.copy()
             else:
                 if obj.Normal.Length:
                     normal = Vector(obj.Normal)
