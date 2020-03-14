@@ -1,6 +1,8 @@
 # ***************************************************************************
-# *                                                                         *
 # *   Copyright (c) 2015 Qingfeng Xia <qingfeng.xia()eng.ox.ac.uk>          *
+# *   Copyright (c) 2016 Bernd Hahnebach <bernd@bimstatik.org>              *
+# *                                                                         *
+# *   This file is part of the FreeCAD CAx development system.              *
 # *                                                                         *
 # *   This program is free software; you can redistribute it and/or modify  *
 # *   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -28,81 +30,40 @@ __url__ = "http://www.freecadweb.org"
 #  \ingroup FEM
 #  \brief FreeCAD ViewProvider for mechanical ResultObjectPython in FEM workbench
 
-import FreeCAD
-import FreeCADGui
-import FemGui  # needed to display the icons in TreeView
+import matplotlib.pyplot as plt
+import numpy as np
 
-# for the panel
-import femresult.resulttools as resulttools
 from PySide import QtCore
 from PySide import QtGui
 from PySide.QtCore import Qt
 from PySide.QtGui import QApplication
-import numpy as np
 
-False if FemGui.__name__ else True  # flake8, dummy FemGui usage
+import FreeCAD
+import FreeCADGui
+
+from . import ViewProviderFemConstraint
+import femresult.resulttools as resulttools
 
 
-class _ViewProviderFemResultMechanical:
-    "A View Provider for the FemResultObject Python derived FemResult class"
-
-    def __init__(self, vobj):
-        vobj.Proxy = self
-
-    def getIcon(self):
-        """after load from FCStd file, self.icon does not exist, return constant path instead"""
-        return ":/icons/fem-post-result-show.svg"
-
-    def attach(self, vobj):
-        self.ViewObject = vobj
-        self.Object = vobj.Object
-
-    def updateData(self, obj, prop):
-        return
-
-    def onChanged(self, vobj, prop):
-        return
-
-    def doubleClicked(self, vobj):
-        guidoc = FreeCADGui.getDocument(vobj.Object.Document)
-        # check if another VP is in edit mode
-        # https://forum.freecadweb.org/viewtopic.php?t=13077#p104702
-        if not guidoc.getInEdit():
-            guidoc.setEdit(vobj.Object.Name)
-        else:
-            from PySide.QtGui import QMessageBox
-            message = "Active Task Dialog found! Please close this one before opening  a new one!"
-            QMessageBox.critical(None, "Error in tree view", message)
-            FreeCAD.Console.PrintError(message + "\n")
-        return True
+class _ViewProviderFemResultMechanical(ViewProviderFemConstraint.ViewProxy):
+    """
+    A View Provider for the FemResultObject Python derived FemResult class
+    """
 
     def setEdit(self, vobj, mode=0):
-        if hasattr(self.Object, "Mesh") and self.Object.Mesh:
-            hide_femmeshes_postpiplines()
-            # only show the FEM result mesh
-            self.Object.Mesh.ViewObject.show()
-            taskd = _TaskPanelFemResultShow(self.Object)
-            taskd.obj = vobj.Object
-            FreeCADGui.Control.showDialog(taskd)
-            return True
-        else:
-            error_message = "FEM: Result object has no appropriate FEM mesh.\n"
-            FreeCAD.Console.PrintError(error_message)
-            from PySide import QtGui
-            QtGui.QMessageBox.critical(None, "No result object", error_message)
-            return False
+        ViewProviderFemConstraint.ViewProxy.setEdit(
+            self,
+            vobj,
+            mode,
+            _TaskPanel,
+        )
 
+    # overwrite unsetEdit, hide result mesh object on task panel exit
     def unsetEdit(self, vobj, mode=0):
         FreeCADGui.Control.closeDialog()
         # hide the mesh after result viewing is finished, but do not reset the coloring
         self.Object.Mesh.ViewObject.hide()
         return True
-
-    def __getstate__(self):
-        return None
-
-    def __setstate__(self, state):
-        return None
 
     def claimChildren(self):
         return [self.Object.Mesh]  # claimChildren needs to return a list !
@@ -118,8 +79,10 @@ class _ViewProviderFemResultMechanical:
         return True
 
 
-class _TaskPanelFemResultShow:
-    """The task panel for the post-processing"""
+class _TaskPanel:
+    """
+    The task panel for the post-processing
+    """
 
     def __init__(self, obj):
         self.result_obj = obj
@@ -208,6 +171,11 @@ class _TaskPanelFemResultShow:
             self.peeq_selected
         )
 
+        # stats
+        self.result_widget.show_histogram.clicked.connect(
+            self.show_histogram_clicked
+        )
+
         # displacement
         QtCore.QObject.connect(
             self.result_widget.cb_show_displacement,
@@ -228,9 +196,7 @@ class _TaskPanelFemResultShow:
         )
 
         # user defined equation
-        QtCore.QObject.connect(
-            self.result_widget.user_def_eq,
-            QtCore.SIGNAL("textchanged()"),
+        self.result_widget.user_def_eq.textChanged.connect(
             self.user_defined_text
         )
         QtCore.QObject.connect(
@@ -331,8 +297,10 @@ class _TaskPanelFemResultShow:
 
     def none_selected(self, state):
         FreeCAD.FEM_dialog["results_type"] = "None"
-        self.set_result_stats("mm", 0.0, 0.0, 0.0)
+        self.set_result_stats("mm", 0.0, 0.0)
         self.reset_mesh_color()
+        if len(plt.get_fignums()) > 0:
+            plt.close()
 
     # if an analysis has different result types and one has
     # stress and the other not the restore result dialog
@@ -379,8 +347,8 @@ class _TaskPanelFemResultShow:
             self.none_selected(True)
 
     def vm_stress_selected(self, state):
-        if len(self.result_obj.StressValues) > 0:
-            self.result_selected("Sabs", self.result_obj.StressValues, "MPa")
+        if len(self.result_obj.vonMises) > 0:
+            self.result_selected("Sabs", self.result_obj.vonMises, "MPa")
         else:
             self.result_widget.rb_none.setChecked(True)
             self.none_selected(True)
@@ -434,6 +402,16 @@ class _TaskPanelFemResultShow:
             self.result_widget.rb_none.setChecked(True)
             self.none_selected(True)
 
+    def show_histogram_clicked(self):
+        if len(plt.get_fignums()) > 0:
+            plt.show()
+        else:
+            QtGui.QMessageBox.information(
+                None,
+                self.result_obj.Label + " - Information",
+                "No histogram available.\nPlease select a result type first."
+            )
+
     def user_defined_text(self, equation):
         FreeCAD.FEM_dialog["results_type"] = "user"
         self.result_widget.user_def_eq.toPlainText()
@@ -445,7 +423,7 @@ class _TaskPanelFemResultShow:
         P1 = np.array(self.result_obj.PrincipalMax)
         P2 = np.array(self.result_obj.PrincipalMed)
         P3 = np.array(self.result_obj.PrincipalMin)
-        Von = np.array(self.result_obj.StressValues)
+        vM = np.array(self.result_obj.vonMises)
         Peeq = np.array(self.result_obj.Peeq)
         T = np.array(self.result_obj.Temperature)
         MF = np.array(self.result_obj.MassFlowRate)
@@ -495,16 +473,37 @@ class _TaskPanelFemResultShow:
         self.update()
         self.restore_result_dialog()
         userdefined_eq = self.result_widget.user_def_eq.toPlainText()  # Get equation to be used
-        UserDefinedFormula = eval(userdefined_eq).tolist()
+
+        # https://forum.freecadweb.org/viewtopic.php?f=18&t=42425&start=10#p368774 ff
+        # https://github.com/FreeCAD/FreeCAD/pull/3020
+        from ply import lex
+        from ply import yacc
+        import femtools.tokrules as tokrules
+        identifiers = [
+            "x", "y", "z", "T", "vM", "Peeq", "P1", "P2", "P3",
+            "sxx", "syy", "szz", "sxy", "sxz", "syz",
+            "exx", "eyy", "ezz", "exy", "exz", "eyz",
+            "MF", "NP", "rx", "ry", "rz", "mc",
+            "s1x", "s1y", "s1z", "s2x", "s2y", "s2z", "s3x", "s3y", "s3z"
+        ]
+        tokrules.names = {}
+        for i in identifiers:
+            tokrules.names[i] = locals()[i]
+
+        lexer = lex.lex(module=tokrules)
+        yacc.parse(input="UserDefinedFormula={0}".format(userdefined_eq), lexer=lexer)
+        UserDefinedFormula = tokrules.names["UserDefinedFormula"].tolist()
+        tokrules.names = {}
+        # UserDefinedFormula = eval(userdefined_eq).tolist()
+
         if UserDefinedFormula:
             self.result_obj.UserDefined = UserDefinedFormula
             minm = min(UserDefinedFormula)
-            avg = sum(UserDefinedFormula) / len(UserDefinedFormula)
             maxm = max(UserDefinedFormula)
-            self.update_colors_stats(UserDefinedFormula, "", minm, avg, maxm)
+            self.update_colors_stats(UserDefinedFormula, "", minm, maxm)
 
         # Dummy use of the variables to get around flake8 error
-        del x, y, z, T, Von, Peeq, P1, P2, P3
+        del x, y, z, T, vM, Peeq, P1, P2, P3
         del sxx, syy, szz, sxy, sxz, syz
         del exx, eyy, ezz, exy, exz, eyz
         del MF, NP, rx, ry, rz, mc
@@ -518,24 +517,32 @@ class _TaskPanelFemResultShow:
 
     def result_selected(self, res_type, res_values, res_unit):
         FreeCAD.FEM_dialog["results_type"] = res_type
-        (minm, avg, maxm) = self.get_result_stats(res_type)
-        self.update_colors_stats(res_values, res_unit, minm, avg, maxm)
+        (minm, maxm) = self.get_result_stats(res_type)
+        self.update_colors_stats(res_values, res_unit, minm, maxm)
 
-    def update_colors_stats(self, res_values, res_unit, minm, avg, maxm):
+        if len(plt.get_fignums()) > 0:
+            plt.close()
+        plt.hist(res_values, bins=50, alpha=0.5, facecolor="blue")
+        plt.xlabel(res_unit)
+        plt.title("Histogram of {}".format(res_type))
+        plt.ylabel("Nodes")
+        plt.grid(True)
+        fig_manager = plt.get_current_fig_manager()
+        fig_manager.window.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)    # stay ontop
+
+    def update_colors_stats(self, res_values, res_unit, minm, maxm):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         if self.suitable_results:
             self.mesh_obj.ViewObject.setNodeColorByScalars(
                 self.result_obj.NodeNumbers,
                 res_values
             )
-        self.set_result_stats(res_unit, minm, avg, maxm)
+        self.set_result_stats(res_unit, minm, maxm)
         QtGui.QApplication.restoreOverrideCursor()
 
-    def set_result_stats(self, unit, minm, avg, maxm):
+    def set_result_stats(self, unit, minm, maxm):
         self.result_widget.le_min.setProperty("unit", unit)
         self.result_widget.le_min.setProperty("rawText", "{:.6} {}".format(minm, unit))
-        self.result_widget.le_avg.setProperty("unit", unit)
-        self.result_widget.le_avg.setProperty("rawText", "{:.6} {}".format(avg, unit))
         self.result_widget.le_max.setProperty("unit", unit)
         self.result_widget.le_max.setProperty("rawText", "{:.6} {}".format(maxm, unit))
 
@@ -598,7 +605,7 @@ class _TaskPanelFemResultShow:
         DisplacementLengths --> rb_abs_displacement
         DisplacementVectors --> rb_x_displacement, rb_y_displacement, rb_z_displacement
         Temperature         --> rb_temperature
-        StressValues        --> rb_vm_stress
+        vonMises            --> rb_vm_stress
         PrincipalMax        --> rb_maxprin
         PrincipalMin        --> rb_minprin
         MaxShear            --> rb_max_shear_stress
@@ -613,7 +620,7 @@ class _TaskPanelFemResultShow:
             self.result_widget.rb_z_displacement.setEnabled(0)
         if len(self.result_obj.Temperature) == 0:
             self.result_widget.rb_temperature.setEnabled(0)
-        if len(self.result_obj.StressValues) == 0:
+        if len(self.result_obj.vonMises) == 0:
             self.result_widget.rb_vm_stress.setEnabled(0)
         if len(self.result_obj.PrincipalMax) == 0:
             self.result_widget.rb_maxprin.setEnabled(0)
@@ -659,6 +666,7 @@ class _TaskPanelFemResultShow:
 
     def reject(self):
         self.reset_result_mesh()
+        plt.close()
         # if the tasks panel is called from Command obj is not in edit mode
         # thus reset edit does not close the dialog, maybe don't call but set in edit instead
         FreeCADGui.Control.closeDialog()
@@ -666,13 +674,6 @@ class _TaskPanelFemResultShow:
 
 
 # helper
-def hide_femmeshes_postpiplines():
-    # hide all visible FEM mesh objects and VTK FemPostPipeline objects
-    for o in FreeCAD.ActiveDocument.Objects:
-        if o.isDerivedFrom("Fem::FemMeshObject") or o.isDerivedFrom("Fem::FemPostPipeline"):
-            o.ViewObject.hide()
-
-
 def hide_parts_constraints():
     from FemGui import getActiveAnalysis
     fem_prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Fem/General")

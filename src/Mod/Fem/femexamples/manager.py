@@ -33,8 +33,10 @@ doc = run_boxanalysisfrequency()
 doc = run_ccx_cantileverfaceload()
 doc = run_ccx_cantilevernodeload()
 doc = run_ccx_cantileverprescribeddisplacement()
+doc = setup_cantileverhexa20faceload()
 doc = run_constraint_contact_shell_shell()
 doc = run_constraint_contact_solid_solid()
+doc = run_constraint_tie()
 doc = run_material_nl_platewithhole()
 doc = run_material_multiple_twoboxes()
 doc = run_rcwall2d()
@@ -175,6 +177,21 @@ def run_ccx_cantileverprescribeddisplacement(solver=None, base_name=None):
     return doc
 
 
+def setup_cantileverhexa20faceload(solver=None, base_name=None):
+
+    from .ccx_cantilever_std import setup_cantileverhexa20faceload as setup
+    doc = setup()
+
+    if base_name is None:
+        base_name = "CantilverHexa20FaceLoad"
+        if solver is not None:
+            base_name += "_" + solver
+    run_analysis(doc, base_name)
+    doc.recompute()
+
+    return doc
+
+
 def run_constraint_contact_shell_shell(solver=None, base_name=None):
 
     from .constraint_contact_shell_shell import setup
@@ -197,6 +214,21 @@ def run_constraint_contact_solid_solid(solver=None, base_name=None):
 
     if base_name is None:
         base_name = "Constraint_Contact_Solid_Solid"
+        if solver is not None:
+            base_name += "_" + solver
+    run_analysis(doc, base_name)
+    doc.recompute()
+
+    return doc
+
+
+def run_constraint_tie(solver=None, base_name=None):
+
+    from .constraint_tie import setup
+    doc = setup()
+
+    if base_name is None:
+        base_name = "Constraint_Tie"
         if solver is not None:
             base_name += "_" + solver
     run_analysis(doc, base_name)

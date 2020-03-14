@@ -30,7 +30,9 @@
 
 #include <vector>
 
+#include <Base/Exception.h>
 #include <Base/Tools.h>
+#include <Base/PyObjectBase.h>
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
@@ -314,7 +316,7 @@ void CmdTechDrawView::activated(int iMsg)
         if (obj->isDerivedFrom(TechDraw::DrawPage::getClassTypeId()) ) {
             continue;
         }
-        if (obj != nullptr) {                       //can this happen?
+        if (obj != nullptr) {
             shapes.push_back(obj);
         }
         if(partObj != nullptr) {
@@ -331,7 +333,7 @@ void CmdTechDrawView::activated(int iMsg)
 
     if ((shapes.empty())) {
         QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Wrong selection"),
-            QObject::tr("No Shapes or Groups in this selection"));
+            QObject::tr("No Shapes, Groups or Links in this selection"));
         return;
     }
 
@@ -1151,6 +1153,43 @@ void CmdTechDrawArchView::activated(int iMsg)
     if (objects.size() != 1) {
         QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Wrong selection"),
             QObject::tr("Select exactly one object."));
+        return;
+    }
+    //if the docObj doesn't have a Proxy property, it definitely isn't an ArchSection
+    App::DocumentObject* frontObj = objects.front();
+    App::Property* proxy = frontObj->getPropertyByName("Proxy");
+    if (proxy == nullptr) {
+        QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Wrong selection"),
+            QObject::tr("Selected object is not ArchSection."));
+        return;
+    }
+    App::PropertyPythonObject* proxyPy = dynamic_cast<App::PropertyPythonObject*>(proxy);
+    Py::Object proxyObj = proxyPy->getValue();
+    std::stringstream ss;
+    bool proceed = false;
+    if (proxyPy != nullptr) {
+        Base::PyGILStateLocker lock;
+        try {
+            if (proxyObj.hasAttr("__module__")) {
+                Py::String mod(proxyObj.getAttr("__module__"));
+                ss <<  (std::string)mod; 
+            }
+            if (ss.str() == "ArchSectionPlane") {
+                proceed = true;
+            }
+        }
+        catch (Py::Exception&) {
+            Base::PyException e; // extract the Python error text
+            e.ReportException();
+            proceed = false;
+        }
+    } else {
+        proceed = false;
+    }
+    
+    if (!proceed) {
+        QMessageBox::warning(Gui::getMainWindow(), QObject::tr("Wrong selection"),
+            QObject::tr("Selected object is not ArchSection."));
         return;
     }
 

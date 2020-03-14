@@ -1,6 +1,8 @@
 # ***************************************************************************
 # *   Copyright (c) 2017 Markus Hovorka <m.hovorka@live.de>                 *
 # *                                                                         *
+# *   This file is part of the FreeCAD CAx development system.              *
+# *                                                                         *
 # *   This program is free software; you can redistribute it and/or modify  *
 # *   it under the terms of the GNU Lesser General Public License (LGPL)    *
 # *   as published by the Free Software Foundation; either version 2 of     *
@@ -26,16 +28,17 @@ __url__ = "http://www.freecadweb.org"
 ## \addtogroup FEM
 #  @{
 
-import subprocess
 import os.path
+import subprocess
 import sys
 
 import FreeCAD
-import femtools.femutils as femutils
 
+from . import writer
 from .. import run
 from .. import settings
-from . import writer
+from femtools import femutils
+from femtools import membertools
 
 
 class Check(run.Check):
@@ -48,7 +51,7 @@ class Check(run.Check):
         self.checkEquations()
 
     def checkMeshType(self):
-        mesh = femutils.get_single_member(self.analysis, "Fem::FemMeshObject")
+        mesh = membertools.get_single_member(self.analysis, "Fem::FemMeshObject")
         if not femutils.is_of_type(mesh, "Fem::FemMeshGmsh"):
             self.report.error(
                 "Unsupported type of mesh. "
@@ -87,7 +90,7 @@ class Prepare(run.Prepare):
 
     def checkHandled(self, w):
         handled = w.getHandledConstraints()
-        allConstraints = femutils.get_member(self.analysis, "Fem::Constraint")
+        allConstraints = membertools.get_member(self.analysis, "Fem::Constraint")
         for obj in set(allConstraints) - handled:
             self.report.warning("Ignored constraint %s." % obj.Label)
 
