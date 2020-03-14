@@ -610,6 +610,16 @@ class _Structure(ArchComponent.Component):
         pl = obj.PropertiesList
         if not "Tool" in pl:
             obj.addProperty("App::PropertyLinkSubList","Tool","Structure",QT_TRANSLATE_NOOP("App::Property","An optional extrusion path for this element"))
+        if not "BasePerpendicularToTool" in pl:
+            obj.addProperty("App::PropertyBool","BasePerpendicularToTool","Structure",QT_TRANSLATE_NOOP("App::Property","Automatically align the Base of the Structure perpendicular to the Tool axis"))
+        if not "BaseXOffset" in pl:
+            obj.addProperty("App::PropertyDistance","BaseXOffset","Structure",QT_TRANSLATE_NOOP("App::Property","X offset between the Base origin and the Tool axis (only used if BasePerpendicularToTool is True)"))
+        if not "BaseYOffset" in pl:
+            obj.addProperty("App::PropertyDistance","BaseYOffset","Structure",QT_TRANSLATE_NOOP("App::Property","Y offset between the Base origin and the Tool axis (only used if BasePerpendicularToTool is True)"))
+        if not "BaseMirror" in pl:
+            obj.addProperty("App::PropertyBool","BaseMirror","Structure",QT_TRANSLATE_NOOP("App::Property","Mirror the Base along its Y axis (only used if BasePerpendicularToTool is True)"))
+        if not "BaseRotation" in pl:
+            obj.addProperty("App::PropertyAngle","BaseRotation","Structure",QT_TRANSLATE_NOOP("App::Property","Base rotation around the Tool axis (only used if BasePerpendicularToTool is True)"))
         if not "Length" in pl:
             obj.addProperty("App::PropertyLength","Length","Structure",QT_TRANSLATE_NOOP("App::Property","The length of this element, if not based on a profile"))
         if not "Width" in pl:
@@ -801,6 +811,21 @@ class _Structure(ArchComponent.Component):
                     extrusion = DraftGeomUtils.vec(edges[0])
                 elif len(edges) > 0:
                     extrusion = Part.Wire(Part.__sortEdges__(edges))
+                if hasattr(obj, "BasePerpendicularToTool") and obj.BasePerpendicularToTool:
+                    pl = FreeCAD.Placement()
+                    if hasattr(obj, "BaseRotation"):
+                        pl.rotate(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), -obj.BaseRotation)
+                    if hasattr(obj, "BaseXOffset") and hasattr(obj, "BaseYOffset"):
+                        pl.translate(FreeCAD.Vector(obj.BaseXOffset, obj.BaseYOffset, 0))
+                    if len(edges) > 0:
+                        pl2 = FreeCAD.Placement()
+                        pl2.Base = edges[0].valueAt(edges[0].FirstParameter)
+                        zaxis = edges[0].tangentAt(edges[0].FirstParameter)
+                        if not (hasattr(obj, "BaseMirror") and obj.BaseMirror):
+                            zaxis = zaxis.negative()
+                        pl2.Rotation = FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), FreeCAD.Vector(0, 0, 1), zaxis, "ZYX")
+                        pl = pl2.multiply(pl)
+                    baseface.Placement = pl
             else:
                 if obj.Normal.Length:
                     normal = Vector(obj.Normal)
