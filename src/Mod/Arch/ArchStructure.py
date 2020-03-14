@@ -609,7 +609,7 @@ class _Structure(ArchComponent.Component):
 
         pl = obj.PropertiesList
         if not "Tool" in pl:
-            obj.addProperty("App::PropertyLink","Tool","Structure",QT_TRANSLATE_NOOP("App::Property","An optional extrusion path for this element"))
+            obj.addProperty("App::PropertyLinkSubList","Tool","Structure",QT_TRANSLATE_NOOP("App::Property","An optional extrusion path for this element"))
         if not "Length" in pl:
             obj.addProperty("App::PropertyLength","Length","Structure",QT_TRANSLATE_NOOP("App::Property","The length of this element, if not based on a profile"))
         if not "Width" in pl:
@@ -779,13 +779,28 @@ class _Structure(ArchComponent.Component):
             import Part
             baseface = Part.Face(Part.makePolygon([v1,v2,v3,v4,v1]))
         if baseface:
-            if obj.Tool:
-                if obj.Tool.Shape:
-                    edges = obj.Tool.Shape.Edges
-                    if len(edges) == 1 and DraftGeomUtils.geomType(edges[0]) == "Line":
-                        extrusion = DraftGeomUtils.vec(edges[0])
-                    else:
-                        extrusion = obj.Tool.Shape.copy()
+            if hasattr(obj, "Tool") and obj.Tool:
+                tool = obj.Tool
+                if hasattr(tool, "Shape") and tool.Shape:
+                    edges = tool.Shape.Edges
+                else:
+                    if not isinstance(tool, list):
+                        tool = [tool]
+                    edges = []
+                    for o, subs in tool:
+                        if hasattr(o, "Shape") and o.Shape:
+                            if len(subs) == 1 and subs[0] == "":
+                                edges += o.Shape.Edges
+                            else:
+                                for sub in subs:
+                                    if "Edge" in sub:
+                                        en = int(sub.lstrip("Edge")) - 1
+                                        if en < len(o.Shape.Edges):
+                                            edges.append(o.Shape.Edges[en])
+                if len(edges) == 1 and DraftGeomUtils.geomType(edges[0]) == "Line":
+                    extrusion = DraftGeomUtils.vec(edges[0])
+                elif len(edges) > 0:
+                    extrusion = Part.Wire(Part.__sortEdges__(edges))
             else:
                 if obj.Normal.Length:
                     normal = Vector(obj.Normal)
@@ -841,8 +856,8 @@ class _Structure(ArchComponent.Component):
                 nodes = extdata[0]
                 nodes.Placement = nodes.Placement.multiply(extdata[2])
                 if IfcType not in ["Slab"]:
-                    if obj.Tool:
-                        nodes = obj.Tool.Shape
+                    if not isinstance(extdata[1], FreeCAD.Vector):
+                        nodes = extdata[1]
                     elif extdata[1].Length > 0:
                         if hasattr(nodes,"CenterOfMass"):
                             import Part
@@ -1075,6 +1090,13 @@ class StructureTaskPanel(ArchComponent.ComponentTaskPanel):
         lay.addWidget(self.toggleButton)
         QtCore.QObject.connect(self.toggleButton, QtCore.SIGNAL("clicked()"), self.toggleNodes)
 
+        self.selectToolButton = QtGui.QPushButton(self.optwid)
+        self.selectToolButton.setIcon(QtGui.QIcon())
+        self.selectToolButton.setText(QtGui.QApplication.translate("Arch", "Select tool...", None))
+        self.selectToolButton.setToolTip(QtGui.QApplication.translate("Arch", "Select object or edges to be used as a Tool (extrusion path)", None))
+        lay.addWidget(self.selectToolButton)
+        QtCore.QObject.connect(self.selectToolButton, QtCore.SIGNAL("clicked()"), self.setSelectionFromTool)
+
         self.form = [self.form,self.optwid]
         self.Object = obj
         self.observer = None
@@ -1169,6 +1191,42 @@ class StructureTaskPanel(ArchComponent.ComponentTaskPanel):
                 if hasattr(obj.ViewObject,"ShowNodes"):
                     self.nodevis.append([obj,obj.ViewObject.ShowNodes])
                     obj.ViewObject.ShowNodes = True
+
+    def setSelectionFromTool(self):
+        FreeCADGui.Selection.clearSelection()
+        if hasattr(self.Object, "Tool"):
+            tool = self.Object.Tool
+            if hasattr(tool, "Shape") and tool.Shape:
+                FreeCADGui.Selection.addSelection(tool)
+            else:
+                if not isinstance(tool, list):
+                    tool = [tool]
+                for o, subs in tool:
+                    FreeCADGui.Selection.addSelection(o, subs)
+        QtCore.QObject.disconnect(self.selectToolButton, QtCore.SIGNAL("clicked()"), self.setSelectionFromTool)
+        QtCore.QObject.connect(self.selectToolButton, QtCore.SIGNAL("clicked()"), self.setToolFromSelection)
+        self.selectToolButton.setText(QtGui.QApplication.translate("Arch", "Done", None))
+
+    def setToolFromSelection(self):
+        objectList = []
+        selEx = FreeCADGui.Selection.getSelectionEx()
+        for selExi in selEx:
+            if len(selExi.SubElementNames) == 0:
+                # Add entirely selected objects
+                objectList.append(selExi.Object)
+            else:
+                subElementsNames = [subElementName for subElementName in selExi.SubElementNames if subElementName.startswith("Edge")]
+                # Check that at least an edge is selected from the object's shape
+                if len(subElementsNames) > 0:
+                    objectList.append((selExi.Object, subElementsNames))
+        if self.Object.getTypeIdOfProperty("Tool") != "App::PropertyLinkSubList":
+            # Upgrade property Tool from App::PropertyLink to App::PropertyLinkSubList (note: Undo/Redo fails)
+            self.Object.removeProperty("Tool")
+            self.Object.addProperty("App::PropertyLinkSubList", "Tool", "Structure", QT_TRANSLATE_NOOP("App::Property", "An optional extrusion path for this element"))
+        self.Object.Tool = objectList
+        QtCore.QObject.disconnect(self.selectToolButton, QtCore.SIGNAL("clicked()"), self.setToolFromSelection)
+        QtCore.QObject.connect(self.selectToolButton, QtCore.SIGNAL("clicked()"), self.setSelectionFromTool)
+        self.selectToolButton.setText(QtGui.QApplication.translate("Arch", "Select tool...", None))
 
     def accept(self):
 
