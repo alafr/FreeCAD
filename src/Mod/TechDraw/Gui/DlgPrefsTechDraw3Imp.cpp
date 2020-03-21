@@ -44,6 +44,7 @@ DlgPrefsTechDraw3Imp::DlgPrefsTechDraw3Imp( QWidget* parent )
     this->setupUi(this);
     plsb_FontSize->setUnit(Base::Unit::Length);
     plsb_ArrowSize->setUnit(Base::Unit::Length);
+    pdsbBalloonKink->setUnit(Base::Unit::Length);
 }
 
 DlgPrefsTechDraw3Imp::~DlgPrefsTechDraw3Imp()
@@ -130,7 +131,7 @@ int DlgPrefsTechDraw3Imp::prefBalloonArrow(void) const
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().
                                          GetGroup("BaseApp")->GetGroup("Preferences")->
                                          GetGroup("Mod/TechDraw/Decorations");
-    int end = hGrp->GetInt("BalloonArrow", 1);
+    int end = hGrp->GetInt("BalloonArrow", 0);
     return end;
 }
 
@@ -139,7 +140,7 @@ int DlgPrefsTechDraw3Imp::prefArrowStyle(void) const
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter().
                                          GetGroup("BaseApp")->GetGroup("Preferences")->
                                          GetGroup("Mod/TechDraw/Dimensions");
-    int style = hGrp->GetInt("ArrowStyle", 1);
+    int style = hGrp->GetInt("ArrowStyle", 0);
     return style;
 }
 
