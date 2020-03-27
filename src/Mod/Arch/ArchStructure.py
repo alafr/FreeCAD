@@ -1081,52 +1081,56 @@ class StructureTaskPanel(ArchComponent.ComponentTaskPanel):
     def __init__(self,obj):
 
         ArchComponent.ComponentTaskPanel.__init__(self)
-        self.optwid = QtGui.QWidget()
-        self.optwid.setWindowTitle(QtGui.QApplication.translate("Arch", "Node Tools", None))
-        lay = QtGui.QVBoxLayout(self.optwid)
+        self.nodes_widget = QtGui.QWidget()
+        self.nodes_widget.setWindowTitle(QtGui.QApplication.translate("Arch", "Node Tools", None))
+        lay = QtGui.QVBoxLayout(self.nodes_widget)
 
-        self.resetButton = QtGui.QPushButton(self.optwid)
+        self.resetButton = QtGui.QPushButton(self.nodes_widget)
         self.resetButton.setIcon(QtGui.QIcon(":/icons/edit-undo.svg"))
         self.resetButton.setText(QtGui.QApplication.translate("Arch", "Reset nodes", None))
 
         lay.addWidget(self.resetButton)
         QtCore.QObject.connect(self.resetButton, QtCore.SIGNAL("clicked()"), self.resetNodes)
 
-        self.editButton = QtGui.QPushButton(self.optwid)
+        self.editButton = QtGui.QPushButton(self.nodes_widget)
         self.editButton.setIcon(QtGui.QIcon(":/icons/Draft_Edit.svg"))
         self.editButton.setText(QtGui.QApplication.translate("Arch", "Edit nodes", None))
         lay.addWidget(self.editButton)
         QtCore.QObject.connect(self.editButton, QtCore.SIGNAL("clicked()"), self.editNodes)
 
-        self.extendButton = QtGui.QPushButton(self.optwid)
+        self.extendButton = QtGui.QPushButton(self.nodes_widget)
         self.extendButton.setIcon(QtGui.QIcon(":/icons/Snap_Perpendicular.svg"))
         self.extendButton.setText(QtGui.QApplication.translate("Arch", "Extend nodes", None))
         self.extendButton.setToolTip(QtGui.QApplication.translate("Arch", "Extends the nodes of this element to reach the nodes of another element", None))
         lay.addWidget(self.extendButton)
         QtCore.QObject.connect(self.extendButton, QtCore.SIGNAL("clicked()"), self.extendNodes)
 
-        self.connectButton = QtGui.QPushButton(self.optwid)
+        self.connectButton = QtGui.QPushButton(self.nodes_widget)
         self.connectButton.setIcon(QtGui.QIcon(":/icons/Snap_Intersection.svg"))
         self.connectButton.setText(QtGui.QApplication.translate("Arch", "Connect nodes", None))
         self.connectButton.setToolTip(QtGui.QApplication.translate("Arch", "Connects nodes of this element with the nodes of another element", None))
         lay.addWidget(self.connectButton)
         QtCore.QObject.connect(self.connectButton, QtCore.SIGNAL("clicked()"), self.connectNodes)
 
-        self.toggleButton = QtGui.QPushButton(self.optwid)
+        self.toggleButton = QtGui.QPushButton(self.nodes_widget)
         self.toggleButton.setIcon(QtGui.QIcon(":/icons/dagViewVisible.svg"))
         self.toggleButton.setText(QtGui.QApplication.translate("Arch", "Toggle all nodes", None))
         self.toggleButton.setToolTip(QtGui.QApplication.translate("Arch", "Toggles all structural nodes of the document on/off", None))
         lay.addWidget(self.toggleButton)
         QtCore.QObject.connect(self.toggleButton, QtCore.SIGNAL("clicked()"), self.toggleNodes)
 
-        self.selectToolButton = QtGui.QPushButton(self.optwid)
+        self.extrusion_widget = QtGui.QWidget()
+        self.extrusion_widget.setWindowTitle(QtGui.QApplication.translate("Arch", "Extrusion Tools", None))
+        lay = QtGui.QVBoxLayout(self.extrusion_widget)
+
+        self.selectToolButton = QtGui.QPushButton(self.extrusion_widget)
         self.selectToolButton.setIcon(QtGui.QIcon())
         self.selectToolButton.setText(QtGui.QApplication.translate("Arch", "Select tool...", None))
         self.selectToolButton.setToolTip(QtGui.QApplication.translate("Arch", "Select object or edges to be used as a Tool (extrusion path)", None))
         lay.addWidget(self.selectToolButton)
         QtCore.QObject.connect(self.selectToolButton, QtCore.SIGNAL("clicked()"), self.setSelectionFromTool)
 
-        self.form = [self.form,self.optwid]
+        self.form = [self.form, self.nodes_widget, self.extrusion_widget]
         self.Object = obj
         self.observer = None
         self.nodevis = None
