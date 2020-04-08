@@ -183,6 +183,76 @@ def placeAlongEdge(p1,p2,horizontal=False):
     return pl
 
 
+class _CommandStructuresFromSelection:
+    """ The Arch Structures from selection command definition. """
+
+    def __init__(self):
+        pass
+
+    def GetResources(self):
+        return {'Pixmap': 'Arch_MultipleStructures',
+                'MenuText': QT_TRANSLATE_NOOP("Arch_Structure", "Multiple Structures"),
+                'ToolTip': QT_TRANSLATE_NOOP("Arch_Structure", "Create multiple Arch Structure objects from a selected base, using each selected edge as an extrusion path")}
+
+    def IsActive(self):
+        return not FreeCAD.ActiveDocument is None
+
+    def Activated(self):
+        selex = FreeCADGui.Selection.getSelectionEx()
+        if len(selex) >= 2:
+            FreeCAD.ActiveDocument.openTransaction(translate("Arch", "Create Structures From Selection"))
+            FreeCADGui.addModule("Arch")
+            FreeCADGui.addModule("Draft")
+            base = selex[0].Object # The first selected object is the base for the Structure objects
+            for selexi in selex[1:]: # All the edges from the other objects are used as a Tool (extrusion paths)
+                if len(selexi.SubElementNames) == 0:
+                    subelement_names = ["Edge" + str(i) for i in range(1, len(selexi.Object.Shape.Edges) + 1)]
+                else:
+                    subelement_names = [sub for sub in selexi.SubElementNames if sub.startswith("Edge")]
+                for sub in subelement_names:
+                    FreeCADGui.doCommand("structure = Arch.makeStructure(FreeCAD.ActiveDocument." + base.Name + ")")
+                    FreeCADGui.doCommand("structure.Tool = (FreeCAD.ActiveDocument." + selexi.Object.Name + ", '" + sub + "')")
+                    FreeCADGui.doCommand("structure.BasePerpendicularToTool = True")
+                    FreeCADGui.doCommand("Draft.autogroup(structure)")
+            FreeCAD.ActiveDocument.commitTransaction()
+            FreeCAD.ActiveDocument.recompute()
+        else:
+            FreeCAD.Console.PrintError(translate("Arch", "Please select the base object first and then the edges to use as extrusion paths"))
+
+
+class _CommandStructuralSystem:
+    """ The Arch Structural System command definition. """
+
+    def __init__(self):
+        pass
+
+    def GetResources(self):
+        return {'Pixmap': 'Arch_StructuralSystem',
+                'MenuText': QT_TRANSLATE_NOOP("Arch_Structure", "Structural System"),
+                'ToolTip': QT_TRANSLATE_NOOP("Arch_Structure", "Create a structural system object from a selected structure and axis")}
+
+    def IsActive(self):
+        return not FreeCAD.ActiveDocument is None
+
+    def Activated(self):
+        sel = FreeCADGui.Selection.getSelection()
+        if sel:
+            st = Draft.getObjectsOfType(sel, "Structure")
+            ax = Draft.getObjectsOfType(sel, "Axis")
+            if ax:
+                FreeCAD.ActiveDocument.openTransaction(translate("Arch", "Create Structural System"))
+                FreeCADGui.addModule("Arch")
+                if st:
+                    FreeCADGui.doCommand("obj = Arch.makeStructuralSystem(" + ArchCommands.getStringList(st) + ", " + ArchCommands.getStringList(ax) + ")")
+                else:
+                    FreeCADGui.doCommand("obj = Arch.makeStructuralSystem(axes = " + ArchCommands.getStringList(ax) + ")")
+                FreeCADGui.addModule("Draft")
+                FreeCADGui.doCommand("Draft.autogroup(obj)")
+                FreeCAD.ActiveDocument.commitTransaction()
+                FreeCAD.ActiveDocument.recompute()
+                return
+
+
 class _CommandStructure:
 
     "the Arch Structure command definition"
@@ -222,16 +292,7 @@ class _CommandStructure:
             st = Draft.getObjectsOfType(sel,"Structure")
             ax = Draft.getObjectsOfType(sel,"Axis")
             if ax:
-                FreeCAD.ActiveDocument.openTransaction(translate("Arch","Create Structural System"))
-                FreeCADGui.addModule("Arch")
-                if st:
-                    FreeCADGui.doCommand("obj = Arch.makeStructuralSystem(" + ArchCommands.getStringList(st) + "," + ArchCommands.getStringList(ax) + ")")
-                else:
-                    FreeCADGui.doCommand("obj = Arch.makeStructuralSystem(axes=" + ArchCommands.getStringList(ax) + ")")
-                FreeCADGui.addModule("Draft")
-                FreeCADGui.doCommand("Draft.autogroup(obj)")
-                FreeCAD.ActiveDocument.commitTransaction()
-                FreeCAD.ActiveDocument.recompute()
+                FreeCADGui.runCommand("Arch_StructuralSystem")
                 return
             elif not(ax) and not(st):
                 FreeCAD.ActiveDocument.openTransaction(translate("Arch","Create Structure"))
@@ -610,6 +671,10 @@ class _Structure(ArchComponent.Component):
         pl = obj.PropertiesList
         if not "Tool" in pl:
             obj.addProperty("App::PropertyLinkSubList","Tool","Structure",QT_TRANSLATE_NOOP("App::Property","An optional extrusion path for this element"))
+        if not "StartOffset" in pl:
+            obj.addProperty("App::PropertyDistance","StartOffset","Structure",QT_TRANSLATE_NOOP("App::Property","Start offset distance along the extrusion path (positive: extend, negative: trim"))
+        if not "EndOffset" in pl:
+            obj.addProperty("App::PropertyDistance","EndOffset","Structure",QT_TRANSLATE_NOOP("App::Property","End offset distance along the extrusion path (positive: extend, negative: trim"))
         if not "BasePerpendicularToTool" in pl:
             obj.addProperty("App::PropertyBool","BasePerpendicularToTool","Structure",QT_TRANSLATE_NOOP("App::Property","Automatically align the Base of the Structure perpendicular to the Tool axis"))
         if not "BaseXOffset" in pl:
@@ -795,41 +860,28 @@ class _Structure(ArchComponent.Component):
         if baseface:
             if hasattr(obj, "Tool") and obj.Tool:
                 tool = obj.Tool
-                if hasattr(tool, "Shape") and tool.Shape:
-                    edges = tool.Shape.Edges
-                else:
-                    if not isinstance(tool, list):
-                        tool = [tool]
-                    edges = []
-                    for o, subs in tool:
-                        if hasattr(o, "Shape") and o.Shape:
-                            if len(subs) == 1 and subs[0] == "":
-                                edges += o.Shape.Edges
-                            else:
-                                for sub in subs:
-                                    if "Edge" in sub:
-                                        en = int(sub.lstrip("Edge")) - 1
-                                        if en < len(o.Shape.Edges):
-                                            edges.append(o.Shape.Edges[en])
-                if len(edges) == 1 and DraftGeomUtils.geomType(edges[0]) == "Line":
-                    extrusion = DraftGeomUtils.vec(edges[0])
-                elif len(edges) > 0:
+                edges = DraftGeomUtils.get_referenced_edges(tool)
+                if len(edges) > 0:
                     extrusion = Part.Wire(Part.__sortEdges__(edges))
-                if hasattr(obj, "BasePerpendicularToTool") and obj.BasePerpendicularToTool:
-                    pl = FreeCAD.Placement()
-                    if hasattr(obj, "BaseRotation"):
-                        pl.rotate(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), -obj.BaseRotation)
-                    if hasattr(obj, "BaseXOffset") and hasattr(obj, "BaseYOffset"):
-                        pl.translate(FreeCAD.Vector(obj.BaseXOffset, obj.BaseYOffset, 0))
-                    if len(edges) > 0:
-                        pl2 = FreeCAD.Placement()
-                        pl2.Base = edges[0].valueAt(edges[0].FirstParameter)
-                        zaxis = edges[0].tangentAt(edges[0].FirstParameter)
-                        if not (hasattr(obj, "BaseMirror") and obj.BaseMirror):
-                            zaxis = zaxis.negative()
-                        pl2.Rotation = FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), FreeCAD.Vector(0, 0, 1), zaxis, "ZYX")
-                        pl = pl2.multiply(pl)
-                    baseface.Placement = pl
+                    if hasattr(obj, "StartOffset"):
+                        offset_start = float(obj.StartOffset.getValueAs("mm"))
+                    else:
+                        offset_start = 0.0
+                    if hasattr(obj, "EndOffset"):
+                        offset_end = float(obj.EndOffset.getValueAs("mm"))
+                    else:
+                        offset_end = 0.0
+                    if offset_start  != 0.0 or offset_end != 0.0:
+                        extrusion = DraftGeomUtils.get_extended_wire(extrusion, offset_start, offset_end)
+                    if hasattr(obj, "BasePerpendicularToTool") and obj.BasePerpendicularToTool:
+                        pl = FreeCAD.Placement()
+                        if hasattr(obj, "BaseRotation"):
+                            pl.rotate(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), -obj.BaseRotation)
+                        if hasattr(obj, "BaseXOffset") and hasattr(obj, "BaseYOffset"):
+                            pl.translate(FreeCAD.Vector(obj.BaseXOffset, obj.BaseYOffset, 0))
+                        if hasattr(obj, "BaseMirror"):
+                            pl.rotate(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 1, 0), 180)
+                        baseface.Placement = DraftGeomUtils.get_placement_perpendicular_to_wire(extrusion).multiply(pl)
             else:
                 if obj.Normal.Length:
                     normal = Vector(obj.Normal)
@@ -851,6 +903,8 @@ class _Structure(ArchComponent.Component):
                 base, placement = self.rebase(baseface)
                 inverse_placement = placement.inverse()
             if extrusion:
+                if len(extrusion.Edges) == 1 and DraftGeomUtils.geomType(extrusion.Edges[0]) == "Line":
+                    extrusion = DraftGeomUtils.vec(extrusion.Edges[0])
                 if isinstance(extrusion, FreeCAD.Vector):
                     extrusion = inverse_placement.Rotation.multVec(extrusion)
             elif normal:
@@ -883,7 +937,6 @@ class _Structure(ArchComponent.Component):
             extdata = self.getExtrusionData(obj)
             if extdata and not isinstance(extdata[0],list):
                 nodes = extdata[0]
-                nodes.Placement = nodes.Placement.multiply(extdata[2])
                 if IfcType not in ["Slab"]:
                     if not isinstance(extdata[1], FreeCAD.Vector):
                         nodes = extdata[1]
@@ -891,6 +944,7 @@ class _Structure(ArchComponent.Component):
                         if hasattr(nodes,"CenterOfMass"):
                             import Part
                             nodes = Part.LineSegment(nodes.CenterOfMass,nodes.CenterOfMass.add(extdata[1])).toShape()
+                nodes.Placement = nodes.Placement.multiply(extdata[2])
             offset = FreeCAD.Vector()
             if hasattr(obj,"NodesOffset"):
                 offset = FreeCAD.Vector(0,0,obj.NodesOffset.Value)
@@ -1395,3 +1449,18 @@ class _ViewProviderStructuralSystem(ArchComponent.ViewProviderComponent):
 
 if FreeCAD.GuiUp:
     FreeCADGui.addCommand('Arch_Structure',_CommandStructure())
+    FreeCADGui.addCommand('Arch_StructuralSystem',_CommandStructuralSystem())
+    FreeCADGui.addCommand('Arch_StructuresFromSelection',_CommandStructuresFromSelection())
+
+    class _ArchStructureGroupCommand:
+
+        def GetCommands(self):
+            return tuple(['Arch_Structure', 'Arch_StructuralSystem', 'Arch_StructuresFromSelection'])
+        def GetResources(self):
+            return { 'MenuText': QT_TRANSLATE_NOOP("Arch_Structure",'Structure tools'),
+                     'ToolTip': QT_TRANSLATE_NOOP("Arch_Structure",'Structure tools')
+                   }
+        def IsActive(self):
+            return not FreeCAD.ActiveDocument is None
+
+    FreeCADGui.addCommand('Arch_StructureTools', _ArchStructureGroupCommand())
