@@ -2412,37 +2412,26 @@ def removeSplitter(shape):
     return None
 
 
-def get_shape_with_real_placement(obj):
-    """ Returns the object's shape with it's real Placement (object's placement is multiplied
-        with the linked object's placement if LinkTransform is True). """
-    shape = None
-    if hasattr(obj, "Shape") and obj.Shape:
-        shape = obj.Shape.copy()
-        if hasattr(obj, "LinkTransform") and obj.LinkTransform:
-            shape.Placement = shape.Placement.multiply(obj.LinkedObject.Placement)
-    return shape
-
-
 def get_referenced_edges(property_value):
-    """ Returns the Edges referenced by the value of a App:PropertyLink or App::PropertyLinkSub property. """
-    shape = get_shape_with_real_placement(property_value)
-    if shape:
-        edges = shape.Edges
-    else:
-        if not isinstance(property_value, list):
-            property_value = [property_value]
-        edges = []
-        for object, subelement_names in property_value:
-            object_shape = get_shape_with_real_placement(object)
-            if object_shape:
+    """ Returns the Edges referenced by the value of a App:PropertyLink, App::PropertyLinkList,
+        App::PropertyLinkSub or App::PropertyLinkSubList property. """
+    edges = []
+    if not isinstance(property_value, list):
+        property_value = [property_value]
+    for element in property_value:
+        if hasattr(element, "Shape") and element.Shape:
+            edges += shape.Edges
+        elif isinstance(element, tuple) and len(element) == 2:
+            object, subelement_names = element
+            if hasattr(object, "Shape") and object.Shape:
                 if len(subelement_names) == 1 and subelement_names[0] == "":
-                    edges += object_shape.Edges
+                    edges += object.Shape.Edges
                 else:
                     for subelement_name in subelement_names:
                         if subelement_name.startswith("Edge"):
                             edge_number = int(subelement_name.lstrip("Edge")) - 1
-                            if edge_number < len(object_shape.Edges):
-                                edges.append(object_shape.Edges[edge_number])
+                            if edge_number < len(object.Shape.Edges):
+                                edges.append(object.Shape.Edges[edge_number])
     return edges
 
 
