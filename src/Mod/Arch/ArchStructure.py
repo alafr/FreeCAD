@@ -250,7 +250,8 @@ class _CommandStructuralSystem:
                 FreeCADGui.doCommand("Draft.autogroup(obj)")
                 FreeCAD.ActiveDocument.commitTransaction()
                 FreeCAD.ActiveDocument.recompute()
-                return
+            else:
+                FreeCAD.Console.PrintError(translate("Arch", "Please select at least an axis object") + "\n")
 
 
 class _CommandStructure:
